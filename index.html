@@ -49,6 +49,7 @@
 </div>
 
 
+<iframe id="app" title="Tableau de bord DMER" allow="clipboard-read; clipboard-write; camera; geolocation; fullscreen"></iframe>
 <script>
   // ⬇️ SEULE LIGNE À MODIFIER : collez ici le lien /exec de votre déploiement Apps Script
   const LIEN_EXEC = "https://script.google.com/macros/s/AKfycbw63ARmNl0Oz9LMhlC5lctZfiZ69iLgGK1u1tnY2oUrCWpNhcIl_6EI8tejiSCqf6QAig/exec";
@@ -67,9 +68,12 @@
     const installee = matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true;
     if (installee) {
       // Application installée : ouverture directe du tableau de bord
+      // Application installée : le tableau de bord s'affiche DANS l'application (pas de barre « X » en haut)
       msg.textContent = 'Ouverture du tableau de bord…'; dots.hidden = false; retry.hidden = true; ouvrir.hidden = true; aide.hidden = true;
-      setTimeout(() => location.replace(cible), 400);
-      setTimeout(() => erreur("Le chargement prend du temps. Vérifiez votre connexion puis réessayez."), 30000);
+      const app = document.getElementById('app');
+      app.src = cible + '&t=' + Date.now();
+      const garde = setTimeout(() => erreur("Le chargement prend du temps. Vérifiez votre connexion puis réessayez."), 45000);
+      app.onload = () => { clearTimeout(garde); app.classList.add('on'); splash.classList.add('off'); };
     } else {
       // Dans le navigateur : on laisse le temps d'installer l'application
       msg.textContent = 'Tableau de bord de suivi des notifications';
