@@ -43,6 +43,8 @@
   <p id="msg">Chargement du tableau de bord…</p>
   <div class="dots" id="dots"><i></i><i></i><i></i></div>
   <button type="button" id="retry" hidden>Réessayer</button>
+  <button type="button" id="ouvrir" hidden>Ouvrir le tableau de bord</button>
+  <p id="aide" hidden style="font-size:13.5px;max-width:330px">📲 Pour installer l'application : menu <b>⋮</b> du navigateur → <b>Ajouter à l'écran d'accueil</b> → <b>Installer</b>.<br>Sur iPhone : <b>Partager</b> → <b>Sur l'écran d'accueil</b>.</p>
   <div class="foot">Conçu et développé par Abdoukhadre Boye</div>
 </div>
 
@@ -52,7 +54,7 @@
   const LIEN_EXEC = "https://script.google.com/macros/s/AKfycbw63ARmNl0Oz9LMhlC5lctZfiZ69iLgGK1u1tnY2oUrCWpNhcIl_6EI8tejiSCqf6QAig/exec";
 
   const splash = document.getElementById('splash');
-  const msg = document.getElementById('msg'), dots = document.getElementById('dots'), retry = document.getElementById('retry');
+  const msg = document.getElementById('msg'), dots = document.getElementById('dots'), retry = document.getElementById('retry'), ouvrir = document.getElementById('ouvrir'), aide = document.getElementById('aide');
 
   function erreur(t){ msg.textContent = t; dots.hidden = true; retry.hidden = false; splash.classList.remove('off'); }
   function lancer(){
@@ -61,11 +63,19 @@
       retry.hidden = true; return;
     }
     if (!navigator.onLine) { erreur("Pas de connexion Internet. Vérifiez vos données mobiles ou le Wi-Fi, puis réessayez."); return; }
-    msg.textContent = 'Ouverture du tableau de bord…'; dots.hidden = false; retry.hidden = true;
-    // Ouverture directe du tableau de bord (fonctionne sur tous les téléphones,
-    // même quand le navigateur bloque les pages Google à l'intérieur d'une autre page)
-    setTimeout(() => location.replace(LIEN_EXEC + (LIEN_EXEC.includes('?') ? '&' : '?') + 'app=1'), 400);
-    setTimeout(() => erreur("Le chargement prend du temps. Vérifiez votre connexion puis réessayez."), 30000);
+    const cible = LIEN_EXEC + (LIEN_EXEC.includes('?') ? '&' : '?') + 'app=1';
+    const installee = matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true;
+    if (installee) {
+      // Application installée : ouverture directe du tableau de bord
+      msg.textContent = 'Ouverture du tableau de bord…'; dots.hidden = false; retry.hidden = true; ouvrir.hidden = true; aide.hidden = true;
+      setTimeout(() => location.replace(cible), 400);
+      setTimeout(() => erreur("Le chargement prend du temps. Vérifiez votre connexion puis réessayez."), 30000);
+    } else {
+      // Dans le navigateur : on laisse le temps d'installer l'application
+      msg.textContent = 'Tableau de bord de suivi des notifications';
+      dots.hidden = true; retry.hidden = true; ouvrir.hidden = false; aide.hidden = false;
+      ouvrir.onclick = () => { ouvrir.disabled = true; ouvrir.textContent = 'Ouverture…'; location.href = cible; };
+    }
   }
   retry.onclick = lancer;
   window.addEventListener('online', () => { if (!retry.hidden) lancer(); });
