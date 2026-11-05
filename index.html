@@ -45,13 +45,13 @@
   <button type="button" id="retry" hidden>Réessayer</button>
   <div class="foot">Conçu et développé par Abdoukhadre Boye</div>
 </div>
-<iframe id="app" title="Tableau de bord DMER" allow="clipboard-read; clipboard-write; camera; geolocation; fullscreen"></iframe>
+
 
 <script>
   // ⬇️ SEULE LIGNE À MODIFIER : collez ici le lien /exec de votre déploiement Apps Script
   const LIEN_EXEC = "https://script.google.com/macros/s/AKfycbw63ARmNl0Oz9LMhlC5lctZfiZ69iLgGK1u1tnY2oUrCWpNhcIl_6EI8tejiSCqf6QAig/exec";
 
-  const app = document.getElementById('app'), splash = document.getElementById('splash');
+  const splash = document.getElementById('splash');
   const msg = document.getElementById('msg'), dots = document.getElementById('dots'), retry = document.getElementById('retry');
 
   function erreur(t){ msg.textContent = t; dots.hidden = true; retry.hidden = false; splash.classList.remove('off'); }
@@ -61,11 +61,11 @@
       retry.hidden = true; return;
     }
     if (!navigator.onLine) { erreur("Pas de connexion Internet. Vérifiez vos données mobiles ou le Wi-Fi, puis réessayez."); return; }
-    msg.textContent = 'Chargement du tableau de bord…'; dots.hidden = false; retry.hidden = true;
-    app.classList.remove('on');
-    app.src = LIEN_EXEC + (LIEN_EXEC.includes('?') ? '&' : '?') + 'app=1&t=' + Date.now();
-    const garde = setTimeout(() => erreur("Le chargement prend du temps. Vérifiez votre connexion puis réessayez."), 45000);
-    app.onload = () => { clearTimeout(garde); app.classList.add('on'); splash.classList.add('off'); };
+    msg.textContent = 'Ouverture du tableau de bord…'; dots.hidden = false; retry.hidden = true;
+    // Ouverture directe du tableau de bord (fonctionne sur tous les téléphones,
+    // même quand le navigateur bloque les pages Google à l'intérieur d'une autre page)
+    setTimeout(() => location.replace(LIEN_EXEC + (LIEN_EXEC.includes('?') ? '&' : '?') + 'app=1'), 400);
+    setTimeout(() => erreur("Le chargement prend du temps. Vérifiez votre connexion puis réessayez."), 30000);
   }
   retry.onclick = lancer;
   window.addEventListener('online', () => { if (!retry.hidden) lancer(); });
