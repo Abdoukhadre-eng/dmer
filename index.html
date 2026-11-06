@@ -16,7 +16,10 @@
 <style>
   /* Une seule page : écran de démarrage, puis le tableau de bord Apps Script en plein écran. */
   :root{--deep:#14532a;--deep2:#23873a;--sun:#f2b705;--ink:#ffffff;--soft:#d6efd9}
-  html,body{margin:0;height:100%;background:var(--deep);color:var(--ink);font-family:system-ui,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+  html,body{margin:0;height:100%;background:var(--deep);color:var(--ink);font-family:system-ui,"Segoe UI",Roboto,sans-serif;overflow:hidden;overscroll-behavior:none}
+  #hb{position:fixed;top:calc(8px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:5;display:flex;gap:10px;align-items:center;
+    background:#1b6e30;color:#fff;border-radius:14px;padding:9px 12px;font-size:13.5px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);max-width:calc(100vw - 24px)}
+  #hb button{padding:6px 12px;border-radius:9px;font-size:13px}
   #app{position:fixed;inset:0;width:100%;height:100%;border:0;background:#f5f8f3;opacity:0;transition:opacity .3s}
   #app.on{opacity:1}
   #splash{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
@@ -44,47 +47,126 @@
   <div class="dots" id="dots"><i></i><i></i><i></i></div>
   <button type="button" id="retry" hidden>Réessayer</button>
   <button type="button" id="ouvrir" hidden>Ouvrir le tableau de bord</button>
+  <button type="button" id="voirHors" hidden style="background:#fff;color:#14532a">Voir les données hors connexion</button>
   <p id="aide" hidden style="font-size:13.5px;max-width:330px">📲 Pour installer l'application : menu <b>⋮</b> du navigateur → <b>Ajouter à l'écran d'accueil</b> → <b>Installer</b>.<br>Sur iPhone : <b>Partager</b> → <b>Sur l'écran d'accueil</b>.</p>
   <div class="foot">Conçu et développé par Abdoukhadre Boye</div>
 </div>
 
 
+<div id="hb" hidden><span>🔄 Le réseau est revenu</span><button type="button" id="hbGo">Actualiser</button></div>
 <iframe id="app" title="Tableau de bord DMER" allow="clipboard-read; clipboard-write; camera; geolocation; fullscreen"></iframe>
 <script>
   // ⬇️ SEULE LIGNE À MODIFIER : collez ici le lien /exec de votre déploiement Apps Script
   const LIEN_EXEC = "https://script.google.com/macros/s/AKfycbw63ARmNl0Oz9LMhlC5lctZfiZ69iLgGK1u1tnY2oUrCWpNhcIl_6EI8tejiSCqf6QAig/exec";
 
-  const splash = document.getElementById('splash');
-  const msg = document.getElementById('msg'), dots = document.getElementById('dots'), retry = document.getElementById('retry'), ouvrir = document.getElementById('ouvrir'), aide = document.getElementById('aide');
+  const $ = id => document.getElementById(id);
+  const splash = $('splash'), msg = $('msg'), dots = $('dots'), retry = $('retry'), ouvrir = $('ouvrir'), aide = $('aide'), voirHors = $('voirHors'), app = $('app'), hb = $('hb');
+  const installee = matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true;
+  const cible = LIEN_EXEC + (LIEN_EXEC.includes('?') ? '&' : '?') + 'app=1';
 
-  function erreur(t){ msg.textContent = t; dots.hidden = true; retry.hidden = false; splash.classList.remove('off'); }
-  function lancer(){
-    if (!/^https:\/\/script\.google\.com\/.+\/exec/.test(LIEN_EXEC)) {
-      erreur("Lien de l'application manquant : collez le lien /exec dans index.html (ligne LIEN_EXEC).");
-      retry.hidden = true; return;
-    }
-    if (!navigator.onLine) { erreur("📴 Pas de connexion Internet. Le tableau de bord s'ouvrira tout seul dès que le réseau revient."); dots.hidden = false; return; }
-    const cible = LIEN_EXEC + (LIEN_EXEC.includes('?') ? '&' : '?') + 'app=1';
-    const installee = matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true;
-    if (installee) {
-      // Application installée : ouverture directe du tableau de bord
-      // Application installée : le tableau de bord s'affiche DANS l'application (pas de barre « X » en haut)
-      msg.textContent = 'Ouverture du tableau de bord…'; dots.hidden = false; retry.hidden = true; ouvrir.hidden = true; aide.hidden = true;
-      const app = document.getElementById('app');
-      app.src = cible + '&t=' + Date.now();
-      const garde = setTimeout(() => erreur("Connexion lente : le chargement continue. Touchez Réessayer si rien ne s'affiche."), 45000);
-      app.onload = () => { clearTimeout(garde); app.classList.add('on'); splash.classList.add('off'); };
-    } else {
+  // ---------- copie gardée sur l'appareil (mode hors connexion) ----------
+  const DC = 'dmer-donnees', FN = ['getDashboardData', 'getStocks', 'getSaisieConfig', 'getLogos'];
+  const CLE_FILE = 'dmer_file_notif', CLE_V = 'dmer_page_v';
+  const ls = { get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (_) { return d; } },
+               set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} } };
+  const cle = n => new Request('./__hl/' + n);
+  async function boite() { try { return ('caches' in window) ? await caches.open(DC) : null; } catch (_) { return null; } }
+  async function lireCopie() {
+    const c = await boite(); if (!c) return null;
+    const p = await c.match(cle('page')), d = await c.match(cle('rep-getDashboardData'));
+    if (!p || !d) return null;
+    const out = { rep: {}, page: await p.json() };
+    for (const f of FN) { const r = await c.match(cle('rep-' + f)); if (r) try { out.rep[f] = await r.json(); } catch (_) {} }
+    out.t = (out.rep.getDashboardData && out.rep.getDashboardData.t) || Date.now();
+    return out;
+  }
+  async function aUneCopie() { const c = await boite(); return !!(c && await c.match(cle('page')) && await c.match(cle('rep-getDashboardData'))); }
+  window.DMER_OUBLI = async () => { const c = await boite(); if (c) for (const f of FN) await c.delete(cle('rep-' + f)); };
+
+  let mode = '', dernierSignal = 0, visibleDepuis = Date.now(), dernierToucher = 0;
+
+  function erreur(t) { msg.textContent = t; dots.hidden = true; retry.hidden = false; splash.classList.remove('off');
+    aUneCopie().then(ok => { voirHors.hidden = !ok; }); }
+
+  // Tableau de bord en ligne (Apps Script)
+  function enLigne() {
+    mode = 'ligne'; hb.hidden = true; dernierSignal = 0;
+    msg.textContent = 'Ouverture du tableau de bord…'; dots.hidden = false; retry.hidden = true; ouvrir.hidden = true; aide.hidden = true; voirHors.hidden = true;
+    splash.classList.remove('off'); app.classList.remove('on');
+    app.removeAttribute('srcdoc'); app.src = cible + '&t=' + Date.now();
+    const garde = setTimeout(() => { if (mode === 'ligne' && !app.classList.contains('on')) erreur("Connexion lente : le chargement continue. Touchez Réessayer si rien ne s'affiche."); }, 30000);
+    app.onload = () => { clearTimeout(garde); if (mode !== 'ligne') return; app.classList.add('on'); splash.classList.add('off'); };
+  }
+
+  // Copie gardée : même tableau de bord, avec les données de la dernière connexion
+  async function horsLigne() {
+    const d = await lireCopie(); if (!d) return false;
+    window.DMER_HORS = d; mode = 'hors'; hb.hidden = true;
+    const stub = '<script>window.DMER_MODE_HORS=true;window.DMER_MODE_HORS_T=' + d.t + ';(function(){var P=parent.DMER_HORS||{rep:{}};' +
+      'try{sessionStorage.setItem("notif_tok","horsligne")}catch(e){}' +
+      'function auj(){var n=new Date(),p=function(x){return("0"+x).slice(-2)};return n.getFullYear()+"-"+p(n.getMonth()+1)+"-"+p(n.getDate())}' +
+      'function R(s,f){return new Proxy({},{get:function(_,k){if(k==="withSuccessHandler")return function(x){return R(x,f)};if(k==="withFailureHandler")return function(x){return R(s,x)};' +
+      'if(k==="withUserObject")return function(){return R(s,f)};if(typeof k!=="string")return undefined;return function(){setTimeout(function(){var r=P.rep[k];' +
+      'if(r&&r.data!==undefined){var x=JSON.parse(JSON.stringify(r.data));if(k==="getSaisieConfig"&&x)x.aujourdhui=auj();if(s)s(x)}else if(f)f(new Error("NetworkError: hors connexion"))},30)}}})}' +
+      'window.google={script:{}};Object.defineProperty(window.google.script,"run",{configurable:true,get:function(){return R(null,null)}});})();<\/script>';
+    let html = d.page.html; const m = html.match(/<head[^>]*>/i);
+    html = m ? html.slice(0, m.index + m[0].length) + stub + html.slice(m.index + m[0].length) : stub + html;
+    splash.classList.remove('off'); msg.textContent = 'Ouverture des données gardées sur le téléphone…'; dots.hidden = false; retry.hidden = true; voirHors.hidden = true;
+    app.onload = () => { if (mode !== 'hors') return; app.classList.add('on'); splash.classList.add('off');
+      try { ['pointerdown', 'keydown', 'input', 'scroll'].forEach(ev => app.contentWindow.addEventListener(ev, () => { dernierToucher = Date.now(); }, true)); } catch (_) {} };
+    app.removeAttribute('src'); app.srcdoc = html;
+    return true;
+  }
+
+  async function lancer() {
+    if (!/^https:\/\/script\.google\.com\/.+\/exec/.test(LIEN_EXEC)) { erreur("Lien de l'application manquant : collez le lien /exec dans index.html (ligne LIEN_EXEC)."); retry.hidden = true; return; }
+    if (!installee) {
       // Dans le navigateur : on laisse le temps d'installer l'application
       msg.textContent = 'Tableau de bord de suivi des notifications';
       dots.hidden = true; retry.hidden = true; ouvrir.hidden = false; aide.hidden = false;
       ouvrir.onclick = () => { ouvrir.disabled = true; ouvrir.textContent = 'Ouverture…'; location.href = cible; };
+      return;
     }
+    if (!navigator.onLine) {
+      if (await horsLigne()) return;
+      erreur("📴 Pas de connexion Internet. Le tableau de bord s'ouvrira tout seul dès que le réseau revient."); dots.hidden = false; return;
+    }
+    enLigne();
   }
-  retry.onclick = lancer;
-  window.addEventListener('online', () => { if (!retry.hidden) lancer(); });
-  // nouvel essai automatique tant que le tableau de bord n'est pas ouvert
-  setInterval(() => { if (!retry.hidden && navigator.onLine) lancer(); }, 15000);
+  retry.onclick = () => enLigne();
+  voirHors.onclick = () => horsLigne();
+  $('hbGo').onclick = () => enLigne();
+
+  // ---------- messages du tableau de bord en ligne ----------
+  window.addEventListener('message', async e => {
+    let h = ''; try { h = new URL(e.origin).hostname; } catch (_) { return; }
+    if (!/\.googleusercontent\.com$/.test(h)) return;
+    const m = e.data; if (!m || !m.dmer) return;
+    dernierSignal = Date.now();
+    const c = await boite();
+    if (m.dmer === 'rep' && c && FN.includes(m.fn)) await c.put(cle('rep-' + m.fn), new Response(JSON.stringify({ data: m.data, t: m.t })));
+    else if (m.dmer === 'page' && c && m.html) { await c.put(cle('page'), new Response(JSON.stringify({ v: m.v, html: m.html }))); ls.set(CLE_V, m.v); }
+    else if (m.dmer === 'hello' && e.source) e.source.postMessage({ dmer: 'etat', v: ls.get(CLE_V, ''), file: ls.get(CLE_FILE, []) }, e.origin);
+    else if (m.dmer === 'fileRecu') ls.set(CLE_FILE, ls.get(CLE_FILE, []).filter(f => !(m.ids || []).includes(f.id)));
+    else if (m.dmer === 'oubli') window.DMER_OUBLI();
+  });
+
+  // ---------- réseau ----------
+  window.addEventListener('online', () => {
+    if (mode === 'hors') { hb.hidden = false; return; }
+    if (!retry.hidden) enLigne();
+  });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') visibleDepuis = Date.now(); });
+  setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
+    // copie hors connexion + réseau revenu : retour en ligne si l'agent ne touche à rien depuis 15 s
+    if (mode === 'hors') { if (navigator.onLine) { hb.hidden = false; if (Date.now() - dernierToucher > 15000) enLigne(); } return; }
+    // le tableau de bord en ligne ne répond plus (rechargé sans réseau) : on ouvre la copie gardée
+    if (mode === 'ligne' && !navigator.onLine && dernierSignal && Date.now() - dernierSignal > 35000 && Date.now() - visibleDepuis > 35000) { horsLigne(); return; }
+    // écran d'erreur + réseau revenu : nouvel essai
+    if (!retry.hidden && navigator.onLine) enLigne();
+  }, 5000);
+
   lancer();
 
   if ('serviceWorker' in navigator) {
