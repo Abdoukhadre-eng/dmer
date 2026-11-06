@@ -63,7 +63,7 @@
       erreur("Lien de l'application manquant : collez le lien /exec dans index.html (ligne LIEN_EXEC).");
       retry.hidden = true; return;
     }
-    if (!navigator.onLine) { erreur("Pas de connexion Internet. Vérifiez vos données mobiles ou le Wi-Fi, puis réessayez."); return; }
+    if (!navigator.onLine) { erreur("📴 Pas de connexion Internet. Le tableau de bord s'ouvrira tout seul dès que le réseau revient."); dots.hidden = false; return; }
     const cible = LIEN_EXEC + (LIEN_EXEC.includes('?') ? '&' : '?') + 'app=1';
     const installee = matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true;
     if (installee) {
@@ -72,7 +72,7 @@
       msg.textContent = 'Ouverture du tableau de bord…'; dots.hidden = false; retry.hidden = true; ouvrir.hidden = true; aide.hidden = true;
       const app = document.getElementById('app');
       app.src = cible + '&t=' + Date.now();
-      const garde = setTimeout(() => erreur("Le chargement prend du temps. Vérifiez votre connexion puis réessayez."), 45000);
+      const garde = setTimeout(() => erreur("Connexion lente : le chargement continue. Touchez Réessayer si rien ne s'affiche."), 45000);
       app.onload = () => { clearTimeout(garde); app.classList.add('on'); splash.classList.add('off'); };
     } else {
       // Dans le navigateur : on laisse le temps d'installer l'application
@@ -83,6 +83,8 @@
   }
   retry.onclick = lancer;
   window.addEventListener('online', () => { if (!retry.hidden) lancer(); });
+  // nouvel essai automatique tant que le tableau de bord n'est pas ouvert
+  setInterval(() => { if (!retry.hidden && navigator.onLine) lancer(); }, 15000);
   lancer();
 
   if ('serviceWorker' in navigator) {
